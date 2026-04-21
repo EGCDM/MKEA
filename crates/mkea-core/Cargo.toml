@@ -21,4 +21,4 @@ mkea-loader = { path = "../mkea-loader" }
 unicorn-engine = { workspace = true, optional = true }
 
 [target."cfg(windows)".dependencies]
-winapi = { version = "0.3", features = ["mciapi", "mmeapi", "mmsystem", "mmreg"] }
+winapi = { version = "0.3", features = ["mmeapi", "mmsystem", "mmreg"] }

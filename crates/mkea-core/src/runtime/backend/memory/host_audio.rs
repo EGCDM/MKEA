@@ -441,10 +441,20 @@ impl MemoryArm32Backend {
 
     #[cfg(windows)]
     fn host_audio_mci_command(command: &str) -> bool {
-        use std::ptr::null_mut;
-        use winapi::um::mciapi::mciSendStringW;
+        use std::ffi::c_void;
+
+        #[link(name = "winmm")]
+        unsafe extern "system" {
+            fn mciSendStringW(
+                lpstrcommand: *const u16,
+                lpstrreturnstring: *mut u16,
+                ureturnlength: u32,
+                hwndcallback: *mut c_void,
+            ) -> u32;
+        }
+
         let wide: Vec<u16> = command.encode_utf16().chain(std::iter::once(0)).collect();
-        unsafe { mciSendStringW(wide.as_ptr(), null_mut(), 0, null_mut()) == 0 }
+        unsafe { mciSendStringW(wide.as_ptr(), std::ptr::null_mut(), 0, std::ptr::null_mut()) == 0 }
     }
 
     #[cfg(windows)]
@@ -458,8 +468,9 @@ impl MemoryArm32Backend {
         };
         use winapi::shared::mmreg::{WAVEFORMATEX, WAVE_FORMAT_PCM};
         use winapi::um::mmsystem::{
-            HWAVEOUT, WAVEHDR, WAVE_MAPPER, CALLBACK_NULL, MMSYSERR_NOERROR, WHDR_DONE,
+            HWAVEOUT, WAVEHDR, WAVE_MAPPER, CALLBACK_NULL, MMSYSERR_NOERROR,
         };
+        const WHDR_DONE_FLAG: u32 = 0x0000_0001;
 
         let block_align = plan.channels.saturating_mul(plan.bits_per_sample / 8);
         if block_align == 0 || plan.sample_rate == 0 {
