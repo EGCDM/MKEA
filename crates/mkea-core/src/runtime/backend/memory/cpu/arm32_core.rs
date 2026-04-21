@@ -5642,6 +5642,86 @@ impl MemoryArm32Backend {
                             self.make_path_string_object("NSString.path.standardized", lhs)
                         }
                     },
+                    "isEqualToString:" => {
+                        let lhs = self.guest_string_value(receiver).unwrap_or_default();
+                        let rhs = self.guest_string_value(arg2).unwrap_or_default();
+                        let equal = arg2 != 0 && lhs == rhs;
+                        note = Some(format!(
+                            "string isEqualToString lhs='{}' rhs='{}' -> {}",
+                            lhs.chars().take(96).collect::<String>().replace('\n', "\\n"),
+                            rhs.chars().take(96).collect::<String>().replace('\n', "\\n"),
+                            if equal { "YES" } else { "NO" }
+                        ));
+                        if equal { 1 } else { 0 }
+                    },
+                    "isEqual:" => {
+                        let equal = if receiver == arg2 {
+                            true
+                        } else {
+                            match (self.guest_string_value(receiver), self.guest_string_value(arg2)) {
+                                (Some(lhs), Some(rhs)) => lhs == rhs,
+                                _ => false,
+                            }
+                        };
+                        note = Some(format!(
+                            "foundation isEqual receiver={} other={} -> {}",
+                            self.describe_ptr(receiver),
+                            self.describe_ptr(arg2),
+                            if equal { "YES" } else { "NO" }
+                        ));
+                        if equal { 1 } else { 0 }
+                    },
+                    "compare:" | "compare:options:" | "caseInsensitiveCompare:" | "localizedCaseInsensitiveCompare:" => {
+                        let lhs = self.guest_string_value(receiver).unwrap_or_default();
+                        let rhs = self.guest_string_value(arg2).unwrap_or_default();
+                        let mut use_case_insensitive = matches!(selector.as_str(), "caseInsensitiveCompare:" | "localizedCaseInsensitiveCompare:");
+                        if selector.as_str() == "compare:options:" {
+                            let options = arg3;
+                            use_case_insensitive |= (options & 0x1) != 0;
+                        }
+                        let lhs_cmp = if use_case_insensitive { lhs.to_ascii_lowercase() } else { lhs.clone() };
+                        let rhs_cmp = if use_case_insensitive { rhs.to_ascii_lowercase() } else { rhs.clone() };
+                        let ordering: i32 = if lhs_cmp < rhs_cmp {
+                            -1
+                        } else if lhs_cmp > rhs_cmp {
+                            1
+                        } else {
+                            0
+                        };
+                        note = Some(format!(
+                            "string {} lhs='{}' rhs='{}' insensitive={} -> {}",
+                            selector,
+                            lhs.chars().take(96).collect::<String>().replace('\n', "\\n"),
+                            rhs.chars().take(96).collect::<String>().replace('\n', "\\n"),
+                            if use_case_insensitive { "YES" } else { "NO" },
+                            ordering
+                        ));
+                        ordering as u32
+                    },
+                    "hasPrefix:" => {
+                        let lhs = self.guest_string_value(receiver).unwrap_or_default();
+                        let rhs = self.guest_string_value(arg2).unwrap_or_default();
+                        let matched = arg2 != 0 && lhs.starts_with(&rhs);
+                        note = Some(format!(
+                            "string hasPrefix lhs='{}' rhs='{}' -> {}",
+                            lhs.chars().take(96).collect::<String>().replace('\n', "\\n"),
+                            rhs.chars().take(96).collect::<String>().replace('\n', "\\n"),
+                            if matched { "YES" } else { "NO" }
+                        ));
+                        if matched { 1 } else { 0 }
+                    },
+                    "hasSuffix:" => {
+                        let lhs = self.guest_string_value(receiver).unwrap_or_default();
+                        let rhs = self.guest_string_value(arg2).unwrap_or_default();
+                        let matched = arg2 != 0 && lhs.ends_with(&rhs);
+                        note = Some(format!(
+                            "string hasSuffix lhs='{}' rhs='{}' -> {}",
+                            lhs.chars().take(96).collect::<String>().replace('\n', "\\n"),
+                            rhs.chars().take(96).collect::<String>().replace('\n', "\\n"),
+                            if matched { "YES" } else { "NO" }
+                        ));
+                        if matched { 1 } else { 0 }
+                    },
                     "characterAtIndex:" => {
                         if let Some(text) = self.guest_string_value(receiver) {
                             let index = arg2 as usize;
