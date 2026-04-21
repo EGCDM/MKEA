@@ -1177,7 +1177,7 @@ impl MemoryArm32Backend {
         receiver: u32,
         receiver_class: &str,
         arg2: u32,
-        _arg3: u32,
+        arg3: u32,
         imp: u32,
         current_pc: u32,
         return_lr: u32,
@@ -1190,10 +1190,14 @@ impl MemoryArm32Backend {
             return;
         }
         let return_thumb = (return_lr & 1) != 0;
+        let resource_arg = match selector {
+            "loadBuffer:filePath:" => arg3,
+            _ => arg2,
+        };
         let resource = self
-            .resolve_path_from_url_like_value(arg2, false)
+            .resolve_path_from_url_like_value(resource_arg, false)
             .map(|path| path.display().to_string())
-            .or_else(|| self.guest_string_value(arg2));
+            .or_else(|| self.guest_string_value(resource_arg));
         self.audio_trace_note_objc_audio_selector(receiver_class, selector, resource.clone(), false);
         self.audio_trace_push_event(format!(
             "objc.audio.real-dispatch class={} selector={} receiver={} imp=0x{:08x} resource={}",
