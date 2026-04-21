@@ -86,6 +86,7 @@ impl MemoryArm32Backend {
 
 // Split into focused include files to keep the backend reviewable without changing behavior.
 include!("memory/host_input.rs");
+include!("memory/host_audio.rs");
 include!("memory/shared.rs");
 include!("memory/objc_runtime.rs");
 include!("memory/cocos_runtime.rs");
