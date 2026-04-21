@@ -19,3 +19,6 @@ ab_glyph = "0.2.32"
 ttf-parser = "0.25.1"
 mkea-loader = { path = "../mkea-loader" }
 unicorn-engine = { workspace = true, optional = true }
+
+[target."cfg(windows)".dependencies]
+windows = { version = "0.58", features = ["Win32_Foundation", "Win32_Media_Multimedia"] }
