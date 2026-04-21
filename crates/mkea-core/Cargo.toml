@@ -1,0 +1,21 @@
+[package]
+name = "mkea-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = []
+unicorn = ["dep:unicorn-engine"]
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+log.workspace = true
+png.workspace = true
+flate2.workspace = true
+ab_glyph = "0.2.32"
+ttf-parser = "0.25.1"
+mkea-loader = { path = "../mkea-loader" }
+unicorn-engine = { workspace = true, optional = true }

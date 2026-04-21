@@ -1,0 +1,70 @@
+// Owned Objective-C runtime state extracted from the monolithic backend file.
+
+#[derive(Debug, Clone)]
+pub(crate) struct ObjcObservedReceiver {
+    receiver: u32,
+    class_ptr: u32,
+    class_name: String,
+    selector: String,
+    tick: u32,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ObjcCreatedReceiver {
+    receiver: u32,
+    class_ptr: u32,
+    class_name: String,
+    origin: String,
+    tick: u32,
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct ObjcState {
+    selector_pool_cursor: u32,
+    selector_pool_end: u32,
+    selector_string_pool: HashMap<String, u32>,
+    objc_section_classlist: Option<ObjcSectionRange>,
+    objc_section_catlist: Option<ObjcSectionRange>,
+    objc_section_cfstring: Option<ObjcSectionRange>,
+    objc_section_const: Option<ObjcSectionRange>,
+    objc_metadata_indexed: bool,
+    objc_classes_by_ptr: HashMap<u32, ObjcClassInfo>,
+    objc_classes_by_name: HashMap<String, u32>,
+    objc_instance_isa_overrides: HashMap<u32, u32>,
+    objc_singletons_by_class: HashMap<u32, u32>,
+    objc_bridge_delegate_name: Option<String>,
+    objc_bridge_delegate_class_name: Option<String>,
+    objc_bridge_inferred_class_name: Option<String>,
+    objc_bridge_inferred_selector_hits: u32,
+    objc_bridge_launch_selector: Option<String>,
+    objc_bridge_launch_imp: Option<u32>,
+    objc_bridge_attempted: bool,
+    objc_bridge_succeeded: bool,
+    objc_bridge_failure_reason: Option<String>,
+    objc_bridge_resume_lr: Option<u32>,
+    objc_real_msgsend_dispatches: u32,
+    objc_last_real_selector: Option<String>,
+    objc_super_msgsend_dispatches: u32,
+    objc_super_msgsend_fallback_returns: u32,
+    objc_last_super_selector: Option<String>,
+    objc_last_super_receiver: Option<u32>,
+    objc_last_super_class: Option<u32>,
+    objc_last_super_imp: Option<u32>,
+    objc_alloc_calls: u32,
+    objc_alloc_with_zone_calls: u32,
+    objc_class_create_instance_calls: u32,
+    objc_init_calls: u32,
+    objc_instances_materialized: u32,
+    objc_last_alloc_class: Option<String>,
+    objc_last_alloc_receiver: Option<u32>,
+    objc_last_alloc_result: Option<u32>,
+    objc_last_init_receiver: Option<u32>,
+    objc_last_init_result: Option<u32>,
+    objc_msgsend_calls: u32,
+    objc_selector_counts: HashMap<String, u32>,
+    recent_objc_selectors: Vec<String>,
+    objc_created_instances_by_class: HashMap<u32, Vec<u32>>,
+    objc_recent_created_receivers: Vec<ObjcCreatedReceiver>,
+    objc_observed_instances_by_class: HashMap<u32, Vec<u32>>,
+    objc_recent_observed_receivers: Vec<ObjcObservedReceiver>,
+}
