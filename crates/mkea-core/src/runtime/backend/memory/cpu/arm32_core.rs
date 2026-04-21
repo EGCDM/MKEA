@@ -1892,6 +1892,38 @@ impl MemoryArm32Backend {
                 self.cpu.thumb = (self.cpu.regs[14] & 1) != 0;
                 return Ok(Some(StepControl::Continue));
             }
+            "CFStringCompare" => {
+                const KCF_COMPARE_CASE_INSENSITIVE: u32 = 1 << 0;
+                let lhs_ptr = self.cpu.regs[0];
+                let rhs_ptr = self.cpu.regs[1];
+                let options = self.cpu.regs[2];
+                let lhs = self.guest_string_value(lhs_ptr).unwrap_or_default();
+                let rhs = self.guest_string_value(rhs_ptr).unwrap_or_default();
+                let (lhs_cmp, rhs_cmp) = if (options & KCF_COMPARE_CASE_INSENSITIVE) != 0 {
+                    (lhs.to_lowercase(), rhs.to_lowercase())
+                } else {
+                    (lhs.clone(), rhs.clone())
+                };
+                let result = match lhs_cmp.cmp(&rhs_cmp) {
+                    std::cmp::Ordering::Less => -1i32,
+                    std::cmp::Ordering::Equal => 0i32,
+                    std::cmp::Ordering::Greater => 1i32,
+                };
+                let detail = format!(
+                    "hle CFStringCompare(lhs={}, rhs={}, options=0x{:08x}) -> {} lhs='{}' rhs='{}'",
+                    self.describe_ptr(lhs_ptr),
+                    self.describe_ptr(rhs_ptr),
+                    options,
+                    result,
+                    lhs.replace('\n', "\\n"),
+                    rhs.replace('\n', "\\n"),
+                );
+                self.diag.trace.push(self.hle_trace_line(index, current_pc, &label, &detail));
+                self.cpu.regs[0] = result as u32;
+                self.cpu.regs[15] = self.cpu.regs[14] & !1;
+                self.cpu.thumb = (self.cpu.regs[14] & 1) != 0;
+                return Ok(Some(StepControl::Continue));
+            }
             "NSSearchPathForDirectoriesInDomains" => {
                 let directory = self.cpu.regs[0];
                 let domain_mask = self.cpu.regs[1];
