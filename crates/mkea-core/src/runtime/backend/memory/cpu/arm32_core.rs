@@ -3078,16 +3078,17 @@ impl MemoryArm32Backend {
                 } else {
                     Vec::new()
                 };
+                let pcm_data = if data_ptr != 0 && size != 0 {
+                    self.read_guest_bytes(data_ptr, size).unwrap_or_default()
+                } else {
+                    Vec::new()
+                };
                 let ok = if let Some(entry) = self.runtime.openal.buffers.get_mut(&buffer) {
                     entry.format = format;
                     entry.frequency = freq;
                     entry.byte_len = size;
                     entry.preview = preview.clone();
-                    entry.pcm_data = if data_ptr != 0 && size != 0 {
-                        self.read_guest_bytes(data_ptr, size).unwrap_or_default()
-                    } else {
-                        Vec::new()
-                    };
+                    entry.pcm_data = pcm_data;
                     true
                 } else {
                     false

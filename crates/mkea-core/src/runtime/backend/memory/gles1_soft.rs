@@ -3084,6 +3084,95 @@ impl MemoryArm32Backend {
         None
     }
 
+    fn resolve_bundle_resource_path_for_receiver_in_directory(
+        &mut self,
+        receiver: u32,
+        name: Option<&str>,
+        ext: Option<&str>,
+        directory: Option<&str>,
+    ) -> Option<PathBuf> {
+        let root = match self.bundle_root_for_receiver(receiver) {
+            Some(root) => root,
+            None => {
+                self.runtime.fs.bundle_scoped_misses = self.runtime.fs.bundle_scoped_misses.saturating_add(1);
+                return None;
+            }
+        };
+
+        let directory = directory
+            .map(|value| value.trim().trim_matches('"').trim_matches('\''))
+            .filter(|value| !value.is_empty());
+        let scoped_root = if let Some(directory) = directory {
+            let normalized = directory.replace('\\', "/");
+            if let Some((_, suffix)) = normalized.rsplit_once(".app/") {
+                root.join(suffix.trim_start_matches('/'))
+            } else {
+                root.join(normalized.trim_start_matches('/'))
+            }
+        } else {
+            root.clone()
+        };
+
+        let name = name
+            .map(|value| value.trim().trim_matches('"').trim_matches('\''))
+            .filter(|value| !value.is_empty());
+        let ext = ext
+            .map(|value| value.trim().trim_matches('"').trim_matches('\''))
+            .filter(|value| !value.is_empty());
+
+        if name.is_none() && ext.is_none() {
+            if scoped_root.exists() {
+                self.runtime.fs.bundle_scoped_hits = self.runtime.fs.bundle_scoped_hits.saturating_add(1);
+                return Some(scoped_root);
+            }
+            self.runtime.fs.bundle_scoped_misses = self.runtime.fs.bundle_scoped_misses.saturating_add(1);
+            return None;
+        }
+
+        let mut query = name.unwrap_or_default().to_string();
+        if let Some(ext) = ext {
+            let ext_suffix = format!(".{}", ext.to_ascii_lowercase());
+            if !query.is_empty() && !query.to_ascii_lowercase().ends_with(&ext_suffix) {
+                query.push('.');
+                query.push_str(ext);
+            } else if query.is_empty() {
+                query = ext.to_string();
+            }
+        }
+
+        let normalized = query.trim().trim_matches('"').trim_matches('\'').replace('\\', "/");
+        if !normalized.is_empty() {
+            let direct = scoped_root.join(normalized.trim_start_matches('/'));
+            if direct.is_file() || direct.is_dir() {
+                self.runtime.fs.bundle_scoped_hits = self.runtime.fs.bundle_scoped_hits.saturating_add(1);
+                return Some(direct);
+            }
+        }
+
+        let candidates = Self::bundle_lookup_candidates(&query);
+        if let Ok(rel) = scoped_root.strip_prefix(&root) {
+            let prefix = rel.to_string_lossy().replace('\\', "/").trim_matches('/').to_ascii_lowercase();
+            if !prefix.is_empty() {
+                for key in &candidates {
+                    let scoped = format!("{}/{}", prefix, key.trim_start_matches('/'));
+                    if let Some(path) = self.runtime.fs.bundle_resource_index.get(&scoped).cloned() {
+                        self.runtime.fs.bundle_scoped_hits = self.runtime.fs.bundle_scoped_hits.saturating_add(1);
+                        return Some(path);
+                    }
+                }
+            }
+        }
+        for key in candidates {
+            if let Some(path) = self.runtime.fs.bundle_resource_index.get(&key).cloned() {
+                self.runtime.fs.bundle_scoped_hits = self.runtime.fs.bundle_scoped_hits.saturating_add(1);
+                return Some(path);
+            }
+        }
+
+        self.runtime.fs.bundle_scoped_misses = self.runtime.fs.bundle_scoped_misses.saturating_add(1);
+        None
+    }
+
     fn bundle_root_string(&self) -> Option<String> {
         self.runtime.fs.bundle_root.as_ref().map(|path| path.display().to_string())
     }

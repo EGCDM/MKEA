@@ -441,10 +441,10 @@ impl MemoryArm32Backend {
 
     #[cfg(windows)]
     fn host_audio_mci_command(command: &str) -> bool {
-        use windows::core::PCWSTR;
-        use windows::Win32::Media::Multimedia::mciSendStringW;
+        use std::ptr::null_mut;
+        use winapi::um::mciapi::mciSendStringW;
         let wide: Vec<u16> = command.encode_utf16().chain(std::iter::once(0)).collect();
-        unsafe { mciSendStringW(PCWSTR(wide.as_ptr()), None, 0, None) == 0 }
+        unsafe { mciSendStringW(wide.as_ptr(), null_mut(), 0, null_mut()) == 0 }
     }
 
     #[cfg(windows)]
@@ -452,10 +452,13 @@ impl MemoryArm32Backend {
         use std::mem::size_of;
         use std::thread;
         use std::time::Duration;
-        use windows::Win32::Media::Multimedia::{
+        use winapi::um::mmeapi::{
             waveOutClose, waveOutOpen, waveOutPrepareHeader, waveOutReset, waveOutUnprepareHeader,
-            waveOutWrite, HWAVEOUT, WAVEFORMATEX, WAVEHDR, WAVE_FORMAT_PCM, WAVE_MAPPER,
-            CALLBACK_NULL, MMSYSERR_NOERROR, WHDR_DONE,
+            waveOutWrite,
+        };
+        use winapi::shared::mmreg::{WAVEFORMATEX, WAVE_FORMAT_PCM};
+        use winapi::um::mmsystem::{
+            HWAVEOUT, WAVEHDR, WAVE_MAPPER, CALLBACK_NULL, MMSYSERR_NOERROR, WHDR_DONE,
         };
 
         let block_align = plan.channels.saturating_mul(plan.bits_per_sample / 8);
@@ -495,11 +498,9 @@ impl MemoryArm32Backend {
                 if (plan.gain - 1.0).abs() > f32::EPSILON {
                     Self::host_audio_scale_pcm_buffer(&mut pcm, plan.bits_per_sample, plan.gain);
                 }
-                let mut header = WAVEHDR {
-                    lpData: windows::core::PSTR(pcm.as_mut_ptr()),
-                    dwBufferLength: pcm.len() as u32,
-                    ..Default::default()
-                };
+                let mut header: WAVEHDR = unsafe { std::mem::zeroed() };
+                header.lpData = pcm.as_mut_ptr() as *mut i8;
+                header.dwBufferLength = pcm.len() as u32;
                 let prepare = unsafe {
                     waveOutPrepareHeader(handle, &mut header, size_of::<WAVEHDR>() as u32)
                 };
