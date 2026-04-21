@@ -527,7 +527,7 @@ impl MemoryArm32Backend {
                     }
                     continue;
                 }
-                while !stop.load(Ordering::SeqCst) && (header.dwFlags & WHDR_DONE as u32) == 0 {
+                while !stop.load(Ordering::SeqCst) && (header.dwFlags & WHDR_DONE_FLAG) == 0 {
                     thread::sleep(Duration::from_millis(4));
                 }
                 if stop.load(Ordering::SeqCst) {
