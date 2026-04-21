@@ -5563,53 +5563,6 @@ impl MemoryArm32Backend {
                             .map(|path| self.materialize_host_string_object("NSString.bundlePath", &path))
                             .unwrap_or(0)
                     },
-                    "pathWithComponents:" => {
-                        if let Some(array) = self.runtime.graphics.synthetic_arrays.get(&arg2).cloned() {
-                            let mut components: Vec<String> = array
-                                .items
-                                .iter()
-                                .filter_map(|item| self.guest_string_value(*item))
-                                .map(|value| value.trim().replace('\\', "/"))
-                                .filter(|value| !value.is_empty())
-                                .collect();
-                            let result = if components.is_empty() {
-                                String::new()
-                            } else {
-                                let first = components.remove(0);
-                                let mut out = if first == "/" {
-                                    "/".to_string()
-                                } else {
-                                    first.trim_end_matches('/').to_string()
-                                };
-                                for component in components {
-                                    let trimmed = component.trim_matches('/');
-                                    if trimmed.is_empty() {
-                                        continue;
-                                    }
-                                    if out.is_empty() || out == "/" {
-                                        if out == "/" {
-                                            out.push_str(trimmed);
-                                        } else {
-                                            out.push_str(trimmed);
-                                        }
-                                    } else {
-                                        out.push('/');
-                                        out.push_str(trimmed);
-                                    }
-                                }
-                                out
-                            };
-                            note = Some(format!(
-                                "pathWithComponents {} -> '{}'",
-                                self.describe_ptr(arg2),
-                                result
-                            ));
-                            self.make_path_string_object("NSString.path.withComponents", result)
-                        } else {
-                            note = Some(format!("pathWithComponents arg={} -> <nil>", self.describe_ptr(arg2)));
-                            0
-                        }
-                    },
                     "stringByAppendingPathComponent:" => {
                         let lhs = self.guest_string_value(receiver).unwrap_or_default();
                         let rhs = self.guest_string_value(arg2).unwrap_or_default();
@@ -5708,6 +5661,45 @@ impl MemoryArm32Backend {
                         } else {
                             0
                         }
+                    },
+                    "pathWithComponents:" => {
+                        let items = self
+                            .runtime
+                            .graphics
+                            .synthetic_arrays
+                            .get(&arg2)
+                            .map(|array| array.items.clone())
+                            .unwrap_or_else(|| if arg2 != 0 { vec![arg2] } else { Vec::new() });
+                        let mut out = String::new();
+                        let mut visible_parts: Vec<String> = Vec::new();
+                        for item in items {
+                            let Some(raw) = self.guest_string_value(item) else {
+                                continue;
+                            };
+                            if raw.is_empty() {
+                                continue;
+                            }
+                            let normalized = raw.replace('\\', "/");
+                            visible_parts.push(normalized.clone());
+                            if out.is_empty() {
+                                out = normalized;
+                                continue;
+                            }
+                            if out == "/" {
+                                out.push_str(normalized.trim_start_matches('/'));
+                                continue;
+                            }
+                            if !out.ends_with('/') {
+                                out.push('/');
+                            }
+                            out.push_str(normalized.trim_matches('/'));
+                        }
+                        note = Some(format!(
+                            "pathWithComponents: parts=[{}] -> {}",
+                            visible_parts.join(", "),
+                            if out.is_empty() { "<empty>" } else { &out }
+                        ));
+                        self.make_path_string_object("NSString.pathWithComponents", out)
                     },
                     "CGImage" => {
                         let mut bg_trace: Option<String> = None;
@@ -6232,17 +6224,23 @@ impl MemoryArm32Backend {
                         }
                     },
                     "removeLastObject" => {
-                        if let Some(array) = self.runtime.graphics.synthetic_arrays.get_mut(&receiver) {
+                        let removed_info = if let Some(array) = self.runtime.graphics.synthetic_arrays.get_mut(&receiver) {
                             let removed = array.items.pop();
                             if removed.is_some() {
                                 array.mutation_count = array.mutation_count.saturating_add(1);
                             }
+                            Some((removed, array.items.len()))
+                        } else {
+                            None
+                        };
+                        if let Some((removed, count)) = removed_info {
+                            let removed_desc = removed
+                                .map(|value| self.describe_ptr(value))
+                                .unwrap_or_else(|| "<none>".to_string());
                             note = Some(format!(
                                 "array removeLastObject removed={} count={}",
-                                removed
-                                    .map(|value| self.describe_ptr(value))
-                                    .unwrap_or_else(|| "<none>".to_string()),
-                                array.items.len()
+                                removed_desc,
+                                count
                             ));
                             receiver
                         } else {
