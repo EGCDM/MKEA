@@ -148,6 +148,7 @@ pub(crate) struct BackendOpenAlBufferState {
     frequency: u32,
     byte_len: u32,
     preview: Vec<u8>,
+    pcm_data: Vec<u8>,
 }
 
 #[derive(Debug, Clone)]
@@ -158,6 +159,7 @@ pub(crate) struct BackendOpenAlSourceState {
     queued_buffers: VecDeque<u32>,
     processed_buffers: VecDeque<u32>,
     state: u32,
+    host_stop_token: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
 }
 
 impl Default for BackendOpenAlSourceState {
@@ -169,6 +171,7 @@ impl Default for BackendOpenAlSourceState {
             queued_buffers: VecDeque::new(),
             processed_buffers: VecDeque::new(),
             state: 0x1011,
+            host_stop_token: None,
         }
     }
 }

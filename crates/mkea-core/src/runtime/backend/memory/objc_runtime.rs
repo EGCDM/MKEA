@@ -1331,6 +1331,7 @@ impl MemoryArm32Backend {
             ) {
                 repairs.push(repair);
             }
+            repairs.extend(self.objc_bind_audio_related_ivars(&receiver_ivars_after, &canonical_reason));
         }
         let repair = if repairs.is_empty() {
             None

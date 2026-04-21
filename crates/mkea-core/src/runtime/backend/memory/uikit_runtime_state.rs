@@ -39,6 +39,8 @@ pub(crate) struct SyntheticAudioPlayerState {
     pub(crate) pause_count: u32,
     pub(crate) stop_count: u32,
     pub(crate) prepare_count: u32,
+    pub(crate) host_alias: Option<String>,
+    pub(crate) host_cached_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -120,4 +122,10 @@ pub(crate) struct UIKitRuntimeState {
     pub(crate) synthetic_notifications: std::collections::BTreeMap<u32, SyntheticNotificationState>,
     pub(crate) movie_players: std::collections::BTreeMap<u32, SyntheticMoviePlayerState>,
     pub(crate) audio_players: std::collections::BTreeMap<u32, SyntheticAudioPlayerState>,
+    pub(crate) bgm_cached_path: Option<String>,
+    pub(crate) bgm_alias: Option<String>,
+    pub(crate) bgm_volume: f32,
+    pub(crate) bgm_loop: bool,
+    pub(crate) bgm_is_playing: bool,
+    pub(crate) bgm_is_paused: bool,
 }
