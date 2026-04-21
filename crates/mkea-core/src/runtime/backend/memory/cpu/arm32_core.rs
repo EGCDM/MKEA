@@ -3055,6 +3055,7 @@ impl MemoryArm32Backend {
                     ids.push(self.read_u32_le(ids_ptr.wrapping_add(i * 4)).unwrap_or(0));
                 }
                 for id in &ids {
+                    self.host_audio_stop_openal_source(*id);
                     self.runtime.openal.sources.remove(id);
                 }
                 self.openal_take_al_error();
@@ -3082,6 +3083,11 @@ impl MemoryArm32Backend {
                     entry.frequency = freq;
                     entry.byte_len = size;
                     entry.preview = preview.clone();
+                    entry.pcm_data = if data_ptr != 0 && size != 0 {
+                        self.read_guest_bytes(data_ptr, size).unwrap_or_default()
+                    } else {
+                        Vec::new()
+                    };
                     true
                 } else {
                     false
@@ -3310,6 +3316,13 @@ impl MemoryArm32Backend {
                 } else {
                     false
                 };
+                if ok {
+                    if label == "alSourcePlay" {
+                        self.host_audio_play_openal_source(source_id);
+                    } else {
+                        self.host_audio_stop_openal_source(source_id);
+                    }
+                }
                 if ok {
                     if label == "alSourcePlay" {
                         self.runtime.audio_trace.openal_play_calls = self.runtime.audio_trace.openal_play_calls.saturating_add(1);
@@ -5016,7 +5029,10 @@ impl MemoryArm32Backend {
                     self.note_synthetic_splash_destination(receiver, arg2, "objc_msgSend");
                     scene_progress_destination_updated = true;
                 }
-                let receiver_class_desc = self.objc_class_name_for_receiver(receiver).unwrap_or_default();
+                let receiver_class_desc = self
+                    .objc_class_name_for_receiver(receiver)
+                    .or_else(|| self.objc_infer_audio_receiver_class_name(receiver, &selector))
+                    .unwrap_or_default();
                 self.objc_note_observed_receiver(receiver, &selector);
                 self.push_scene_progress_selector_event("objc_msgSend", receiver, &receiver_class_desc, &selector, arg2, arg3, None, scene_progress_destination_updated);
                 self.push_scheduler_trace_selector_event("objc_msgSend", receiver, &receiver_class_desc, &selector, arg2, arg3, None);
@@ -6614,6 +6630,7 @@ impl MemoryArm32Backend {
                             state.prepare_count
                         };
                         self.audio_trace_note_objc_audio_selector(&receiver_class_desc, selector.as_str(), resource.clone(), false);
+                        self.host_audio_player_prepare(receiver);
                         note = Some(format!("audio player prepare player={} count={} resource={}", self.describe_ptr(receiver), prepare_count, resource.unwrap_or_else(|| "<none>".to_string())));
                         1
                     },
@@ -6630,6 +6647,7 @@ impl MemoryArm32Backend {
                             state.play_count
                         };
                         self.audio_trace_note_objc_audio_selector(&receiver_class_desc, selector.as_str(), resource.clone(), false);
+                        self.host_audio_player_play(receiver);
                         note = Some(format!("audio player play player={} count={} resource={}", self.describe_ptr(receiver), play_count, resource.unwrap_or_else(|| "<none>".to_string())));
                         1
                     },
@@ -6641,6 +6659,7 @@ impl MemoryArm32Backend {
                             state.pause_count
                         };
                         self.audio_trace_note_objc_audio_selector(&receiver_class_desc, selector.as_str(), None, false);
+                        self.host_audio_player_pause(receiver);
                         note = Some(format!("audio player pause player={} count={}", self.describe_ptr(receiver), pause_count));
                         receiver
                     },
@@ -6652,6 +6671,7 @@ impl MemoryArm32Backend {
                             state.stop_count
                         };
                         self.audio_trace_note_objc_audio_selector(&receiver_class_desc, selector.as_str(), None, false);
+                        self.host_audio_player_stop(receiver);
                         note = Some(format!("audio player stop player={} count={}", self.describe_ptr(receiver), stop_count));
                         receiver
                     },
@@ -6663,6 +6683,7 @@ impl MemoryArm32Backend {
                         let state = self.runtime.ui_runtime.audio_players.entry(receiver).or_default();
                         state.volume = volume;
                         self.audio_trace_note_objc_audio_selector(&receiver_class_desc, selector.as_str(), None, false);
+                        self.host_audio_player_set_volume(receiver, volume);
                         note = Some(format!("audio player setVolume player={} volume={:.3}", self.describe_ptr(receiver), volume));
                         receiver
                     },
@@ -6686,6 +6707,16 @@ impl MemoryArm32Backend {
                             .map(|path| path.display().to_string())
                             .or_else(|| self.guest_string_value(arg2));
                         self.audio_trace_note_objc_audio_selector(&receiver_class_desc, selector.as_str(), resource.clone(), false);
+                        match selector.as_str() {
+                            "preloadBackgroundMusic:" => self.host_audio_bgm_preload(resource.clone()),
+                            "playBackgroundMusic:" => self.host_audio_bgm_play(resource.clone(), false),
+                            "playBackgroundMusic:loop:" => self.host_audio_bgm_play(resource.clone(), arg3 != 0),
+                            "pauseBackgroundMusic" => self.host_audio_bgm_pause(),
+                            "resumeBackgroundMusic" => self.host_audio_bgm_resume(),
+                            "stopBackgroundMusic" => self.host_audio_bgm_stop(),
+                            "setBackgroundMusicVolume:" => self.host_audio_bgm_set_volume(f32::from_bits(arg2)),
+                            _ => {}
+                        }
                         note = Some(format!("audio engine selector={} receiver={} resource={}", selector, self.describe_ptr(receiver), resource.unwrap_or_else(|| "<none>".to_string())));
                         match selector.as_str() {
                             "playEffect:" | "playEffect:loop:" | "playEffect:pitch:pan:gain:" => {
