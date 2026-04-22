@@ -3172,6 +3172,14 @@ impl MemoryArm32Backend {
                 }
                 let detail = format!("hle alSourcef(source={}, param=0x{:04x}, value={:.4}) -> {}", source_id, param, value, ok);
                 self.diag.trace.push(self.hle_trace_line(index, current_pc, &label, &detail));
+                if ok && param == AL_GAIN {
+                    self.audio_trace_push_event(format!(
+                        "openal.source.gain source={} raw=0x{:08x} value={:.6}",
+                        source_id,
+                        self.cpu.regs[2],
+                        value,
+                    ));
+                }
                 self.cpu.regs[0] = 0;
                 self.cpu.regs[15] = self.cpu.regs[14] & !1;
                 self.cpu.thumb = (self.cpu.regs[14] & 1) != 0;
@@ -3208,6 +3216,13 @@ impl MemoryArm32Backend {
                 self.openal_take_al_error();
                 let detail = format!("hle alListenerf(param=0x{:04x}, value={:.4})", param, value);
                 self.diag.trace.push(self.hle_trace_line(index, current_pc, &label, &detail));
+                if param == AL_GAIN {
+                    self.audio_trace_push_event(format!(
+                        "openal.listener.gain raw=0x{:08x} value={:.6}",
+                        self.cpu.regs[1],
+                        value,
+                    ));
+                }
                 self.cpu.regs[0] = 0;
                 self.cpu.regs[15] = self.cpu.regs[14] & !1;
                 self.cpu.thumb = (self.cpu.regs[14] & 1) != 0;

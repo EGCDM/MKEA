@@ -534,6 +534,8 @@ pub struct RuntimeAudioSummary {
     pub objc_audio_last_selector: Option<String>,
     pub objc_audio_last_resource: Option<String>,
     pub objc_audio_last_result: Option<String>,
+    pub objc_audio_last_call_args: Option<String>,
+    pub objc_audio_last_scalar_probe: Option<String>,
     pub unsupported_events: u32,
     pub recent_events: Vec<String>,
 }

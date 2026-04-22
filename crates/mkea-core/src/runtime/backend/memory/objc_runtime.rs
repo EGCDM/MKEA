@@ -305,8 +305,8 @@ impl MemoryArm32Backend {
         obj
     }
 
-    fn objc_should_prefer_real_singleton_dispatch(&mut self, class_ptr: u32, class_name: &str, selector: &str) -> bool {
-        if !Self::audio_is_objc_audio_class(class_name) {
+    fn objc_should_prefer_real_singleton_dispatch(&mut self, class_ptr: u32, _class_name: &str, selector: &str) -> bool {
+        if class_ptr == 0 {
             return false;
         }
         self.ensure_objc_class_hierarchy_indexed(class_ptr);
@@ -1150,13 +1150,85 @@ impl MemoryArm32Backend {
         ))
     }
 
+
+    fn objc_is_audio_probe_selector(receiver_class: &str, selector: &str) -> bool {
+        matches!(
+            (receiver_class, selector),
+            ("DataManager", "soundVolume") | ("DataManager", "musicVolume")
+        )
+    }
+
+    fn objc_audio_call_arg_word(&self, call_arg_index: usize, arg2: u32, arg3: u32) -> u32 {
+        match call_arg_index {
+            0 => arg2,
+            1 => arg3,
+            other => self.peek_stack_u32((other.saturating_sub(2)) as u32).unwrap_or(0),
+        }
+    }
+
+    fn objc_audio_float_arg_desc(word: u32) -> String {
+        format!("0x{word:08x}/{:.6}", Self::f32_from_bits(word))
+    }
+
+    fn objc_format_audio_call_args(&self, selector: &str, arg2: u32, arg3: u32) -> Option<String> {
+        match selector {
+            "playSound:channelGroupId:pitch:pan:gain:loop:" => {
+                let sound = self.objc_audio_call_arg_word(0, arg2, arg3);
+                let group = self.objc_audio_call_arg_word(1, arg2, arg3);
+                let pitch = self.objc_audio_call_arg_word(2, arg2, arg3);
+                let pan = self.objc_audio_call_arg_word(3, arg2, arg3);
+                let gain = self.objc_audio_call_arg_word(4, arg2, arg3);
+                let looping = self.objc_audio_call_arg_word(5, arg2, arg3);
+                Some(format!(
+                    "sound=0x{sound:08x}, group=0x{group:08x}, pitch={}, pan={}, gain={}, loop=0x{looping:08x}/{}",
+                    Self::objc_audio_float_arg_desc(pitch),
+                    Self::objc_audio_float_arg_desc(pan),
+                    Self::objc_audio_float_arg_desc(gain),
+                    if looping != 0 { "YES" } else { "NO" },
+                ))
+            }
+            "_startSound:channelId:pitchVal:panVal:gainVal:looping:checkState:" => {
+                let sound = self.objc_audio_call_arg_word(0, arg2, arg3);
+                let channel = self.objc_audio_call_arg_word(1, arg2, arg3);
+                let pitch = self.objc_audio_call_arg_word(2, arg2, arg3);
+                let pan = self.objc_audio_call_arg_word(3, arg2, arg3);
+                let gain = self.objc_audio_call_arg_word(4, arg2, arg3);
+                let looping = self.objc_audio_call_arg_word(5, arg2, arg3);
+                let check_state = self.objc_audio_call_arg_word(6, arg2, arg3);
+                Some(format!(
+                    "sound=0x{sound:08x}, channel=0x{channel:08x}, pitch={}, pan={}, gain={}, loop=0x{looping:08x}/{}, checkState=0x{check_state:08x}/{}",
+                    Self::objc_audio_float_arg_desc(pitch),
+                    Self::objc_audio_float_arg_desc(pan),
+                    Self::objc_audio_float_arg_desc(gain),
+                    if looping != 0 { "YES" } else { "NO" },
+                    if check_state != 0 { "YES" } else { "NO" },
+                ))
+            }
+            _ => None,
+        }
+    }
+
+    fn objc_audio_scalar_result_probe(&self, receiver_class: &str, selector: &str, result: u32) -> Option<String> {
+        if Self::objc_is_audio_probe_selector(receiver_class, selector) {
+            let signed = result as i32;
+            let normalized = (signed as f32) / 100.0;
+            return Some(format!(
+                "raw=0x{result:08x}, float={:.6}, int={}, normalized={:.3}",
+                Self::f32_from_bits(result),
+                signed,
+                normalized,
+            ));
+        }
+        None
+    }
+
     fn objc_should_watch_real_audio_selector_return(
         &mut self,
         selector: &str,
         receiver: u32,
         receiver_class: &str,
     ) -> bool {
-        if Self::audio_is_objc_audio_class(receiver_class) {
+        if Self::audio_is_objc_audio_class(receiver_class) || Self::objc_is_audio_probe_selector(receiver_class, selector) {
             return true;
         }
         if Self::audio_is_objc_audio_selector(selector) {
@@ -1164,7 +1236,7 @@ impl MemoryArm32Backend {
         }
         if receiver != 0 {
             let class_name = self.objc_receiver_class_name_hint(receiver).unwrap_or_default();
-            if Self::audio_is_objc_audio_class(&class_name) {
+            if Self::audio_is_objc_audio_class(&class_name) || Self::objc_is_audio_probe_selector(&class_name, selector) {
                 return true;
             }
         }
@@ -1199,6 +1271,8 @@ impl MemoryArm32Backend {
             .map(|path| path.display().to_string())
             .or_else(|| self.guest_string_value(resource_arg));
         self.audio_trace_note_objc_audio_selector(receiver_class, selector, resource.clone(), false);
+        let call_args_desc = self.objc_format_audio_call_args(selector, arg2, arg3);
+        self.runtime.audio_trace.objc_audio_last_call_args = call_args_desc.clone();
         self.audio_trace_push_event(format!(
             "objc.audio.real-dispatch class={} selector={} receiver={} imp=0x{:08x} resource={}",
             if receiver_class.is_empty() { "<unknown>" } else { receiver_class },
@@ -1207,6 +1281,15 @@ impl MemoryArm32Backend {
             imp,
             resource.clone().unwrap_or_else(|| "<none>".to_string()),
         ));
+        if let Some(args) = call_args_desc.as_ref() {
+            self.audio_trace_push_event(format!(
+                "objc.audio.args class={} selector={} receiver={} {}",
+                if receiver_class.is_empty() { "<unknown>" } else { receiver_class },
+                selector,
+                self.describe_ptr(receiver),
+                args,
+            ));
+        }
         let receiver_ivars_before = if Self::objc_should_trace_audio_receiver_ivars(selector, receiver_class) {
             self.objc_collect_audio_receiver_ivar_snapshot(receiver)
         } else {
@@ -1226,6 +1309,9 @@ impl MemoryArm32Backend {
             receiver,
             receiver_class: receiver_class.to_string(),
             resource,
+            call_args_desc,
+            arg2,
+            arg3,
             imp,
             return_pc,
             return_thumb,
@@ -1275,6 +1361,7 @@ impl MemoryArm32Backend {
             "sharedEngine" if watch.receiver_class == "SimpleAudioEngine" => Some("SimpleAudioEngine"),
             "sharedEngine" if watch.receiver_class == "OALSimpleAudio" => Some("OALSimpleAudio"),
             "soundEngine" => Some("CDSoundEngine"),
+            "backgroundMusic" if watch.receiver_class == "CDAudioManager" => Some("AVAudioPlayer"),
             "initWithContentsOfURL:error:" | "initWithData:error:" if watch.receiver_class == "AVAudioPlayer" => Some("AVAudioPlayer"),
             _ => None,
         }?;
@@ -1295,6 +1382,55 @@ impl MemoryArm32Backend {
         }
     }
 
+
+    fn note_real_audio_player_return_state(
+        &mut self,
+        watch: &PendingAudioSelectorReturn,
+        result: u32,
+    ) -> Option<String> {
+        if result == 0 {
+            return None;
+        }
+        match watch.selector.as_str() {
+            "initWithContentsOfURL:error:" if watch.receiver_class == "AVAudioPlayer" => {
+                let state = self.runtime.ui_runtime.audio_players.entry(result).or_default();
+                state.content_url = watch.arg2;
+                state.content_data = 0;
+                state.prepared = false;
+                state.is_playing = false;
+                if state.volume == 0.0 {
+                    state.volume = 1.0;
+                }
+                if state.host_alias.is_none() {
+                    state.host_alias = Some(Self::host_audio_player_alias(result));
+                }
+                Some(format!("player-state:init-url:{}", self.describe_ptr(result)))
+            }
+            "initWithData:error:" if watch.receiver_class == "AVAudioPlayer" => {
+                let state = self.runtime.ui_runtime.audio_players.entry(result).or_default();
+                state.content_url = 0;
+                state.content_data = watch.arg2;
+                state.prepared = false;
+                state.is_playing = false;
+                if state.volume == 0.0 {
+                    state.volume = 1.0;
+                }
+                if state.host_alias.is_none() {
+                    state.host_alias = Some(Self::host_audio_player_alias(result));
+                }
+                Some(format!("player-state:init-data:{}", self.describe_ptr(result)))
+            }
+            "backgroundMusic" if watch.receiver_class == "CDAudioManager" => {
+                let state = self.runtime.ui_runtime.audio_players.entry(result).or_default();
+                if state.host_alias.is_none() {
+                    state.host_alias = Some(Self::host_audio_player_alias(result));
+                }
+                Some(format!("player-state:bgm-bind:{}", self.describe_ptr(result)))
+            }
+            _ => None,
+        }
+    }
+
     fn finish_real_audio_selector_return(&mut self, watch: PendingAudioSelectorReturn, origin: &str) {
         let result = self.cpu.regs[0];
         let selector = watch.selector.as_str();
@@ -1305,12 +1441,15 @@ impl MemoryArm32Backend {
         self.runtime.audio_trace.objc_audio_last_class = Some(watch.receiver_class.clone());
         self.runtime.audio_trace.objc_audio_last_selector = Some(watch.selector.clone());
         self.runtime.audio_trace.objc_audio_last_resource = watch.resource.clone();
+        self.runtime.audio_trace.objc_audio_last_call_args = watch.call_args_desc.clone();
         self.runtime.audio_trace.objc_audio_last_result = Some(format!(
             "{} class={} imp=0x{:08x}",
             self.describe_ptr(result),
             result_class,
             watch.imp,
         ));
+        let scalar_probe = self.objc_audio_scalar_result_probe(&watch.receiver_class, selector, result);
+        self.runtime.audio_trace.objc_audio_last_scalar_probe = scalar_probe.clone();
         let receiver_ivars_after = if !watch.receiver_ivars_before.is_empty()
             || Self::objc_should_trace_audio_receiver_ivars(selector, &watch.receiver_class)
         {
@@ -1320,6 +1459,9 @@ impl MemoryArm32Backend {
         };
         let mut repairs = Vec::new();
         if let Some(repair) = self.maybe_repair_real_audio_selector_return(&watch, result) {
+            repairs.push(repair);
+        }
+        if let Some(repair) = self.note_real_audio_player_return_state(&watch, result) {
             repairs.push(repair);
         }
         if watch.receiver_class == "CDAudioManager" {
@@ -1350,6 +1492,24 @@ impl MemoryArm32Backend {
             repair.clone().unwrap_or_else(|| "none".to_string()),
             origin,
         ));
+        if let Some(args) = watch.call_args_desc.as_ref() {
+            self.audio_trace_push_event(format!(
+                "objc.audio.return-args class={} selector={} receiver={} {}",
+                if watch.receiver_class.is_empty() { "<unknown>" } else { &watch.receiver_class },
+                selector,
+                self.describe_ptr(watch.receiver),
+                args,
+            ));
+        }
+        if let Some(probe) = scalar_probe.as_ref() {
+            self.audio_trace_push_event(format!(
+                "objc.audio.scalar-return class={} selector={} receiver={} {}",
+                if watch.receiver_class.is_empty() { "<unknown>" } else { &watch.receiver_class },
+                selector,
+                self.describe_ptr(watch.receiver),
+                probe,
+            ));
+        }
         if !watch.receiver_ivars_before.is_empty() || !receiver_ivars_after.is_empty() {
             let ivar_diff = Self::objc_format_audio_receiver_ivar_diff(
                 &watch.receiver_ivars_before,

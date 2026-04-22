@@ -10,6 +10,8 @@ struct HostPcmPlaybackPlan {
     bits_per_sample: u16,
     loop_forever: bool,
     gain: f32,
+    source_gain: f32,
+    listener_gain: f32,
     chunks: Vec<Vec<u8>>,
 }
 
@@ -134,6 +136,8 @@ impl MemoryArm32Backend {
             bits_per_sample,
             loop_forever,
             gain,
+            source_gain,
+            listener_gain,
             chunks,
         })
     }
@@ -158,7 +162,7 @@ impl MemoryArm32Backend {
             source.host_stop_token = Some(stop_token.clone());
         }
         self.audio_trace_push_event(format!(
-            "hostaudio.openal.play source={} chunks={} sr={} ch={} bits={} loop={} gain={:.3}",
+            "hostaudio.openal.play source={} chunks={} sr={} ch={} bits={} loop={} gain={:.3} sourceGain={:.3} listenerGain={:.3}",
             source_id,
             plan.chunks.len(),
             plan.sample_rate,
@@ -166,6 +170,8 @@ impl MemoryArm32Backend {
             plan.bits_per_sample,
             plan.loop_forever,
             plan.gain,
+            plan.source_gain,
+            plan.listener_gain,
         ));
         Self::host_audio_spawn_pcm_thread(source_id, plan, stop_token);
     }
@@ -178,11 +184,38 @@ impl MemoryArm32Backend {
                 .map(|path| path.display().to_string())
                 .or_else(|| self.guest_string_value(state.content_url));
         }
-        None
+        self.host_audio_infer_player_path_from_manager(player)
     }
 
     fn host_audio_player_alias(player: u32) -> String {
         format!("mkea_avplayer_{player:08x}")
+    }
+
+
+    fn host_audio_infer_player_path_from_manager(&mut self, player: u32) -> Option<String> {
+        let manager = self.runtime.graphics.cocos_audio_manager_object;
+        if manager == 0 {
+            return None;
+        }
+        let snapshot = self.objc_collect_audio_receiver_ivar_snapshot(manager);
+        let mut owns_background_player = false;
+        let mut last_background_path = None;
+        for entry in snapshot {
+            let lower = entry.name.to_ascii_lowercase();
+            if entry.value == player && lower.contains("backgroundmusic") {
+                owns_background_player = true;
+            }
+            if lower.contains("lastbackgroundmusicfilepath") {
+                last_background_path = self
+                    .resolve_path_from_url_like_value(entry.value, false)
+                    .map(|path| path.display().to_string())
+                    .or_else(|| self.guest_string_value(entry.value));
+            }
+        }
+        if owns_background_player {
+            return last_background_path;
+        }
+        None
     }
 
     fn host_audio_player_prepare(&mut self, player: u32) {

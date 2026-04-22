@@ -2363,6 +2363,8 @@ impl MemoryArm32Backend {
                 objc_audio_last_selector: self.runtime.audio_trace.objc_audio_last_selector.clone(),
                 objc_audio_last_resource: self.runtime.audio_trace.objc_audio_last_resource.clone(),
                 objc_audio_last_result: self.runtime.audio_trace.objc_audio_last_result.clone(),
+                objc_audio_last_call_args: self.runtime.audio_trace.objc_audio_last_call_args.clone(),
+                objc_audio_last_scalar_probe: self.runtime.audio_trace.objc_audio_last_scalar_probe.clone(),
                 unsupported_events: self.runtime.audio_trace.unsupported_events,
                 recent_events: self.runtime.audio_trace.recent_events.clone(),
             },
